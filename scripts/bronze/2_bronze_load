@@ -1,0 +1,76 @@
+/*
+===============================================================================
+            Stored Procedure: Load Bronze Layer (Source -> Bronze)
+===============================================================================
+*/
+
+
+CREATE OR ALTER PROCEDURE bronze.bronze_load AS
+BEGIN
+
+	SET DATEFORMAT dmy; -- Change to match CSV file 
+	--GO;
+
+	PRINT '>> Truncating Table: bronze.users';
+	TRUNCATE TABLE bronze.users;
+
+	PRINT '>> Inserting Data Into: bronze.users';
+	BULK INSERT bronze.users
+	FROM 'C:\SQLData\Feature Adoption & Revenue Analysis\datasets\users.csv'
+	WITH (
+		FIRSTROW = 2,
+		FIELDTERMINATOR = ',',
+		TABLOCK
+	);
+
+	PRINT '>> Truncating Table: bronze.crm_prd_info';
+	TRUNCATE TABLE bronze.transactions;
+
+	PRINT '>> Inserting Data Into: bronze.crm_prd_info';
+	BULK INSERT bronze.transactions
+	FROM 'C:\SQLData\Feature Adoption & Revenue Analysis\datasets\transactions.csv'	
+	WITH (
+		FIRSTROW = 2,
+		FIELDTERMINATOR = ',',
+		ROWTERMINATOR = '0x0a',
+		TABLOCK
+	);
+
+	PRINT '>> Truncating Table: bronze.revenue';
+	TRUNCATE TABLE bronze.revenue;
+	
+	PRINT '>> Inserting Data Into: bronze.revenue';
+	BULK INSERT bronze.revenue
+	FROM 'C:\SQLData\Feature Adoption & Revenue Analysis\datasets\revenue.csv'
+	WITH (
+		FIRSTROW = 2,
+		FIELDTERMINATOR = ',',
+		ROWTERMINATOR = '\n',
+		TABLOCK
+	);
+		
+	PRINT '>> Truncating Table: bronze.feature_usage';
+	TRUNCATE TABLE bronze.feature_usage;
+
+	PRINT '>> Inserting Data Into: bronze.feature_usage';
+	BULK INSERT bronze.feature_usage
+	FROM 'C:\SQLData\Feature Adoption & Revenue Analysis\datasets\feature_usage.csv'
+	WITH (
+		FIRSTROW = 2,
+		FIELDTERMINATOR = ',',
+		ROWTERMINATOR = '0x0a',
+		TABLOCK
+	);
+		
+	PRINT '>> Truncating Table: bronze.churn_status';
+	TRUNCATE TABLE bronze.churn_status;
+	
+	PRINT '>> Inserting Data Into: bronze.churn_status';
+	BULK INSERT bronze.churn_status
+	FROM 'C:\SQLData\Feature Adoption & Revenue Analysis\datasets\churn_status.csv'
+	WITH (
+		FIRSTROW = 2,
+		FIELDTERMINATOR = ',',
+		TABLOCK
+	);
+END
