@@ -1,0 +1,75 @@
+/*
+===============================================================================
+                         Create Bronze Layer Tables
+===============================================================================
+This script creates tables in the 'bronze' schema, dropping existing tables 
+if they already exist.
+===============================================================================
+*/
+
+IF OBJECT_ID('bronze.users', 'U') IS NOT NULL
+    DROP TABLE bronze.users;
+GO
+
+CREATE TABLE bronze.users (
+    user_id              INT,
+    signup_date          DATE,
+    city_tier            NVARCHAR(50),
+    age_band             NVARCHAR(50),
+    acquisition_channel  NVARCHAR(50)
+);
+GO
+
+IF OBJECT_ID('bronze.transactions', 'U') IS NOT NULL
+    DROP TABLE bronze.transactions;
+GO
+
+CREATE TABLE bronze.transactions (
+    transaction_id       INT,
+    user_id              INT,
+    transaction_date     DATE,
+    feature_name         NVARCHAR(50),
+    amount               FLOAT,
+    transaction_type     NVARCHAR(50)
+);
+GO
+
+IF OBJECT_ID('bronze.revenue', 'U') IS NOT NULL
+    DROP TABLE bronze.revenue;
+GO
+
+CREATE TABLE bronze.revenue (
+    user_id             INT,
+    year_month          NVARCHAR(50),
+    revenue_source      NVARCHAR(50),
+    feature_name        NVARCHAR(50),
+    revenue_amount      FLOAT
+);
+GO
+
+IF OBJECT_ID('bronze.churn_status', 'U') IS NOT NULL
+    DROP TABLE bronze.churn_status;
+GO
+
+CREATE TABLE bronze.churn_status (
+    user_id            NVARCHAR(50),
+    last_active        DATE,
+    is_churned         NVARCHAR(50),
+    churn_date         DATE
+);
+GO
+
+IF OBJECT_ID('bronze.feature_usage', 'U') IS NOT NULL
+    DROP TABLE bronze.feature_usage;
+GO
+
+CREATE TABLE bronze.feature_usage (
+    usage_id           INT,
+    user_id            INT,
+    feature_name       NVARCHAR(50),
+    usage_date         DATE,
+    usage_count        INT
+);
+GO
+
+
