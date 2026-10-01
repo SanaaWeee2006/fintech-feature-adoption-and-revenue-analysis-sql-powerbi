@@ -1,0 +1,81 @@
+/*
+===============================================================
+                      Segment views
+===============================================================
+*/
+
+-- city segment view
+
+DROP VIEW IF EXISTS gold.segment_city_tier
+GO
+
+CREATE OR ALTER VIEW gold.segment_city_tier AS
+SELECT
+    city_tier,
+    COUNT(*) AS users,
+    CAST(AVG(CAST(features_used_count AS FLOAT)) AS DECIMAL(6,2)) AS avg_features_used,
+    CAST(AVG(total_revenue) AS DECIMAL(14,2)) AS avg_revenue_per_user,
+    SUM(CAST(retention_eligible AS INT)) AS eligible_users,
+    CAST(SUM(CASE WHEN retention_eligible = 1 AND is_churned = 1 THEN 1 ELSE 0 END) * 1.0
+         / NULLIF(SUM(CAST(retention_eligible AS INT)), 0) AS DECIMAL(7,4)) AS churn_rate
+FROM gold.user_master
+GROUP BY city_tier;
+GO
+
+-- acqusiition channel view
+
+DROP VIEW IF EXISTS gold.segment_channel
+GO
+
+CREATE OR ALTER VIEW gold.segment_channel AS
+SELECT
+    acquisition_channel,
+    COUNT(*) AS users,
+    CAST(AVG(CAST(features_used_count AS FLOAT)) AS DECIMAL(6,2)) AS avg_features_used,
+    CAST(AVG(total_revenue) AS DECIMAL(14,2)) AS avg_revenue_per_user,
+    SUM(CAST(retention_eligible AS INT)) AS eligible_users,
+    CAST(SUM(CASE WHEN retention_eligible = 1 AND is_churned = 1 THEN 1 ELSE 0 END) * 1.0
+         / NULLIF(SUM(CAST(retention_eligible AS INT)), 0) AS DECIMAL(7,4)) AS churn_rate
+FROM gold.user_master
+GROUP BY acquisition_channel;
+GO
+
+-- feature by segment  
+
+DROP VIEW IF EXISTS gold.feature_by_segment
+GO
+
+CREATE OR ALTER VIEW gold.feature_by_segment AS
+WITH user_population AS (
+    SELECT user_id, is_churned, city_tier, acquisition_channel
+    FROM gold.user_master
+    WHERE retention_eligible = 1 AND survived_day30 = 1
+),
+segments AS (
+    SELECT user_id, is_churned, 'city_tier' AS segment_type, city_tier AS segment_value FROM user_population
+    UNION ALL
+    SELECT user_id, is_churned, 'acquisition_channel', acquisition_channel FROM user_population
+),
+features AS (
+    SELECT DISTINCT feature_name FROM gold.user_feature
+),
+agg AS (
+    SELECT s.segment_type, s.segment_value, f.feature_name,
+           SUM(CASE WHEN uf.adopted_in_first_30d = 1 THEN 1 ELSE 0 END)                                AS eligible_adopters,
+           SUM(CASE WHEN uf.adopted_in_first_30d = 1 AND s.is_churned = 1 THEN 1 ELSE 0 END)            AS adopters_churned,
+           SUM(CASE WHEN ISNULL(uf.adopted_in_first_30d, 0) = 0 THEN 1 ELSE 0 END)                     AS non_adopters,
+           SUM(CASE WHEN ISNULL(uf.adopted_in_first_30d, 0) = 0 AND s.is_churned = 1 THEN 1 ELSE 0 END) AS non_adopters_churned
+    FROM segments s
+    CROSS JOIN features f
+    LEFT JOIN gold.user_feature uf
+           ON uf.user_id = s.user_id AND uf.feature_name = f.feature_name
+    GROUP BY s.segment_type, s.segment_value, f.feature_name
+)
+SELECT
+    segment_type, segment_value, feature_name, eligible_adopters, non_adopters,
+    CAST(adopters_churned * 1.0 / NULLIF(eligible_adopters, 0) AS DECIMAL(7,4)) AS churn_rate_adopters,
+    CAST(non_adopters_churned * 1.0 / NULLIF(non_adopters, 0) AS DECIMAL(7,4)) AS churn_rate_non_adopters,
+    CAST((non_adopters_churned * 1.0 / NULLIF(non_adopters, 0) - adopters_churned * 1.0 / NULLIF(eligible_adopters, 0)) * 100 AS DECIMAL(7,2)) AS retention_lift_pp
+FROM agg;
+
+GO
