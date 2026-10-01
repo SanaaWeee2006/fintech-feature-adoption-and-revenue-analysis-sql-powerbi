@@ -54,33 +54,36 @@ The 7 features are: **UPI, BillPay, Investments, CreditScore, Loans, Cards, Budg
 
 
 ---
+## 4. Source to Bronze
 
-## 4. Bronze → Silver: Cleaning Logic
+Data is as it is loaded into the bronze layer without any cleaning or validation logic applied.
+
+Script: `bronze folder`
+
+## 5. Bronze to Silver: Cleaning Logic
 
 Bronze is immutable ambiguous values are **flagged, not silently overwritten**; financial records are **quarantined, never deleted**; every row is accounted for in a reconciliation check.
 
 | Table | Issue | Treatment | Why |
 |---|---|---|---|
-| `users` | Missing city_tier/age_band | → `'Unknown'` | An honest segment beats a guessed one |
-| `feature_usage` | Dirty casing/whitespace | Mapped via explicit CASE lookup, not blind `UPPER()` | Unrecognized values stay visible for review |
+| `users` | Missing city_tier/age_band | Replaced with `'Unknown'` | An honest segment beats a guessed one |
+| `feature_usage` | Dirty casing/whitespace | Mapped via explicit CASE lookup | Unrecognized values stay visible for review |
 | `feature_usage` | Exact duplicates | Deduplicated on full-row match (not `usage_id` alone — duplicates share IDs) | |
 | `transactions` | Negative amounts | **Kept unchanged** | Real refunds, not errors |
 | `transactions` | Orphan `user_id`s | Quarantined to `transactions_rejected` with a reason | Financial rows shouldn't vanish without a trail |
-| `transactions` | Unusual amounts | Flagged (`is_outlier_amount`), not removed | Large amounts can be legitimate |
+| `transactions` | Unusual amounts | Flagged (`is_outlier_amount`) | Large amounts can be legitimate |
 | `revenue` | Missing `revenue_source` | **Repaired** via deterministic mapping from `feature_name` | Unlike demographics, this value is derivable from a known business rule |
-| `churn_status` | ~5% label disagrees with recency | **Not overwritten.** A second column, `recency_based_churn_flag`, plus `churn_flag_mismatch`, sit alongside the original | The recorded flag may reflect real ops (e.g. a frozen account); the mismatch is a finding, not a bug to fix |
+| `churn_status` | ~5% label disagrees with recency | **Not overwritten.** A second column, `recency_based_churn_flag`, plus `churn_flag_mismatch` sit alongside the original | The recorded flag may reflect real ops (e.g. a frozen account); the mismatch is a finding, not a bug to fix |
 
-Script: `bronze_to_silver_cleaning.sql`
+Script: `silcer folder`
 
 ---
 
-## 5. Silver → Gold: Analysis-Ready Layer
+## 5. Silver to Gold: Analysis-Ready Data Preparation
 
-Built in dependency order: `user_feature` → `user_master` → `feature_summary` → `cohort_retention` → segment views.
+**Key modeling decisions:**
 
-**Key modeling decisions (the part worth explaining in an interview):**
-
-1. **Adopter definition spans two sources.** A user counts as adopting a feature if they have a usage row *or* revenue from it — built as a `FULL OUTER JOIN` of usage and revenue aggregates. This matters because Budgeting subscribers can pay without ever appearing in the usage log; a usage-only definition would silently drop them.
+1. **Adopter definition spans two sources.** A user counts as adopting a feature if they have a usage row *or* revenue from it built as a `FULL OUTER JOIN` of usage and revenue aggregates. This matters because Budgeting subscribers can pay without ever appearing in the usage log; a usage-only definition would silently drop them.
 
 2. **Bias-controlled retention design (the most important fix in the project).** Two problems had to be handled before any retention comparison was trustworthy:
    - *Immortal time bias:* users who stay longer mechanically have more time to adopt more features, making breadth look artificially protective. **Fix:** adoption is measured only in each user's first 30 days (`adopted_in_first_30d`); retention is judged only among users still active at day 30 (`survived_day30`).
@@ -142,19 +145,6 @@ DAX measures: `dax_measures.txt`, grouped by page (Core, Adoption, Revenue, Rete
 
 ---
 
-## 10. Files in This Repository
-
-| File | Purpose |
-|---|---|
-| `generate_fintech_data.py` | Synthetic data generator (5 CSVs + hidden ground-truth file) |
-| `bronze_to_silver_cleaning.sql` | Bronze → Silver cleaning logic |
-| `silver_to_gold.sql` | Silver → Gold analytics layer + validation checks |
-| `eda_and_business_answers.sql` | EDA and all business-question queries |
-| `dax_measures.txt` | Power BI DAX measures, grouped by dashboard page |
-| `[Power BI .pbix file]` | The 4-page dashboard (star schema model + visuals) |
-
----
-
-## 12. Tools Used
+## 10. Tools Used
 
 SQL Server (T-SQL), Power BI (Power Query & DAX) for the dashboard and data model.
