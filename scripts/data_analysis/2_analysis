@@ -122,3 +122,10 @@ SELECT feature_name,
 FROM gold.feature_summary
 WHERE total_revenue < (SELECT AVG(total_revenue) FROM gold.feature_summary)
 ORDER BY total_revenue ASC, retention_lift_pp DESC;
+
+-- 13. what should we do with each feature?
+SELECT
+    feature_name, adoption_rate, revenue_per_adopter, retention_lift_pp,
+    eligible_adopters, matrix_quadrant
+FROM gold.feature_summary
+ORDER BY matrix_quadrant, adoption_rate DESC;
