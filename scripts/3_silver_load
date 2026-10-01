@@ -1,0 +1,249 @@
+/*
+===============================================================================
+                Prepare Silver Layer (Bronze -> Silver)
+===============================================================================
+*/
+
+PRINT '>> Truncating Table: silver.users';
+TRUNCATE TABLE silver.users;
+PRINT '>> Inserting Data Into: silver.users';
+
+INSERT INTO silver.users (
+    user_id, 
+    signup_date, 
+    city_tier, 
+    age_band, 
+    acquisition_channel
+)
+SELECT 
+user_id,
+signup_date,
+ISNULL(NULLIF(UPPER(TRIM(city_tier)), ''), 'Unknown')  AS city_tier,
+ISNULL(NULLIF(LTRIM(RTRIM(age_band)), ''), 'Unknown')   AS age_band,
+TRIM(acquisition_channel) AS acquisition_channel
+FROM bronze.users
+WHERE signup_date IS NOT NULL
+AND signup_date <= CAST(GETDATE() AS DATE);
+GO
+
+PRINT '>> Truncating Table: silver.feature_usage';
+TRUNCATE TABLE silver.feature_usage;
+PRINT '>> Inserting Data Into: silver.feature_usage';
+
+WITH deduped AS (
+    SELECT *,
+        ROW_NUMBER() OVER (
+            PARTITION BY usage_id, user_id, feature_name, usage_date, usage_count
+            ORDER BY (SELECT NULL)
+        ) AS rn
+    FROM bronze.feature_usage
+),
+normalized AS (
+    SELECT
+        usage_id,
+        user_id,
+        UPPER(TRIM(feature_name)) AS feature_name,
+        usage_date,
+        usage_count,
+        rn
+    FROM deduped
+)
+
+INSERT INTO silver.feature_usage (
+    usage_id, 
+    user_id, 
+    feature_name, 
+    usage_date, 
+    usage_count
+)
+SELECT
+    usage_id,
+    user_id,
+    feature_name,
+    usage_date,
+    usage_count
+FROM normalized
+WHERE rn = 1
+  AND usage_count > 0
+  AND user_id IN (SELECT user_id FROM silver.users);
+GO
+
+PRINT '>> Truncating Table: silver.transactions';
+TRUNCATE TABLE silver.transactions;
+PRINT '>> Inserting Data Into: silver.transactions';
+
+WITH deduped AS (
+    SELECT *,
+        ROW_NUMBER() OVER (
+            PARTITION BY transaction_id, user_id, transaction_date, feature_name, amount, transaction_type
+            ORDER BY (SELECT NULL)
+        ) AS rn
+    FROM bronze.transactions
+),
+clean_type AS (
+    SELECT
+        transaction_id, 
+        user_id, 
+        transaction_date,
+        UPPER(TRIM(feature_name)) AS feature_name,
+        amount,
+        transaction_type,
+        rn
+    FROM deduped
+    WHERE rn = 1
+),
+with_stats AS (
+    SELECT c.*,
+        AVG(amount)   OVER (PARTITION BY feature_name) AS feat_avg,
+        STDEV(amount) OVER (PARTITION BY feature_name) AS feat_stdev
+    FROM clean_type c
+)
+
+INSERT INTO silver.transactions (
+    transaction_id, 
+    user_id, 
+    transaction_date, 
+    feature_name, 
+    amount, 
+    transaction_type, 
+    is_outlier_amount
+)
+
+SELECT
+    transaction_id, 
+    user_id, 
+    transaction_date, 
+    feature_name, 
+    amount, 
+    transaction_type,   
+    CASE WHEN feat_stdev > 0 AND ABS(amount - feat_avg) > 3 * feat_stdev THEN 1 ELSE 0 END AS is_outlier_amount
+FROM with_stats
+WHERE user_id IN (SELECT user_id FROM silver.users);
+GO
+
+PRINT '>> Truncating Table: silver.transactions_rejected';
+TRUNCATE TABLE silver.transactions_rejected;
+PRINT '>> Inserting Data Into: silver.transactions_rejected';
+
+WITH deduped AS (
+    SELECT *,
+        ROW_NUMBER() OVER (
+            PARTITION BY transaction_id, user_id, transaction_date, feature_name, amount, transaction_type
+            ORDER BY (SELECT NULL)
+        ) AS rn
+    FROM bronze.transactions
+),
+clean_type AS (
+    SELECT
+        transaction_id, 
+        user_id, 
+        transaction_date,
+        UPPER(TRIM(feature_name)) AS feature_name,
+        amount,
+        transaction_type,
+        rn
+    FROM deduped
+    WHERE rn = 1
+),
+with_stats AS (
+    SELECT c.*,
+        AVG(amount)   OVER (PARTITION BY feature_name) AS feat_avg,
+        STDEV(amount) OVER (PARTITION BY feature_name) AS feat_stdev
+    FROM clean_type c
+)
+
+INSERT INTO silver.transactions_rejected (
+    transaction_id, 
+    user_id, 
+    transaction_date, 
+    feature_name, 
+    amount, 
+    transaction_type, 
+    rejection_reason
+)
+
+SELECT 
+    transaction_id, 
+    user_id, 
+    transaction_date, 
+    feature_name, 
+    amount, 
+    transaction_type,
+    'user_id not found in silver.users'
+FROM with_stats
+WHERE user_id NOT IN (SELECT user_id FROM silver.users);
+GO
+
+
+PRINT '>> Truncating Table: silver.revenue';
+TRUNCATE TABLE silver.revenue;
+PRINT '>> Inserting Data Into: silver.revenue';
+
+INSERT INTO silver.revenue (
+    user_id, 
+    year_month, 
+    revenue_source, 
+    revenue_source_repaired, 
+    feature_name, 
+    revenue_amount
+)
+
+
+SELECT
+user_id,
+year_month,
+ISNULL(NULLIF(TRIM(revenue_source), ''),
+    CASE feature_name 
+        WHEN 'UPI' THEN 'transaction_fee'
+        WHEN 'BillPay' THEN 'transaction_fee'
+        WHEN 'Investments' THEN 'management_fee'
+        WHEN 'Loans' THEN 'interest_income'
+        WHEN 'Cards' THEN 'interchange_fee'
+        WHEN 'Budgeting' THEN 'subscription'
+        ELSE 'Unknown'
+    END
+    ) AS revenue_source,
+    CASE WHEN revenue_source IS NULL OR TRIM(revenue_source) = '' THEN 1 ELSE 0 END AS revenue_source_repaired,
+    feature_name,
+    revenue_amount
+FROM bronze.revenue
+WHERE revenue_amount >= 0 
+    AND user_id IN (SELECT user_id FROM silver.users);
+
+GO
+
+
+PRINT '>> Truncating Table: silver.churn_status';
+TRUNCATE TABLE silver.churn_status;
+PRINT '>> Inserting Data Into: silver.churn_status';
+
+DECLARE @AsOfDate DATE = (SELECT MAX(usage_date) FROM silver.feature_usage);
+
+INSERT INTO silver.churn_status (
+    user_id, 
+    last_active, 
+    is_churned, 
+    churn_date, 
+    recency_churn_flag, 
+    churn_flag_mismatch
+)
+
+SELECT 
+    user_id,
+    last_active,
+    CASE WHEN LOWER(TRIM(is_churned)) IN ('true','1') THEN 1 ELSE 0 
+        END AS is_churned,
+    churn_date,
+    CASE WHEN DATEDIFF(DAY, CAST(last_active AS DATE), @AsOfDate) > 60 THEN 1 ELSE 0 
+        END AS recency_churn_flag,
+    CASE WHEN (
+                CASE WHEN LOWER(TRIM(CAST(is_churned AS NVARCHAR(10)))) IN ('true', '1') THEN 1 ELSE 0 END) 
+                <> 
+                (CASE WHEN DATEDIFF(DAY, CAST(last_active AS DATE), @AsOfDate) > 60 THEN 1 ELSE 0 
+        END)
+        THEN 1 ELSE 0
+    END AS churn_flag_mismatch
+FROM bronze.churn_status AS b
+WHERE b.user_id IN (SELECT user_id FROM silver.users);
+
+GO
