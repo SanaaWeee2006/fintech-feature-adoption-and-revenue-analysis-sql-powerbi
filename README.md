@@ -109,11 +109,11 @@ Scripts: `gold folder`
 
 ## 7. Power BI: Star Schema
 
-**Dimensions:** `Dim_User` (signup_date, city_tier, age_band, channel, cohort_month), `Dim_Feature` (feature_name, feature_category), `Dim_Date` (calendar table).
+**Dimensions:** `dim_user` (signup_date, city_tier, age_band, channel, cohort_month), `dim_feature` (feature_name, feature_category), `Dim_Date` (calendar table).
 
-**Facts:** `Fact_UserFeature` (user & feature grain — adoption, usage, revenue), `Fact_UserSummary` (user grain — churn, breadth, revenue), `Fact_CohortRetention` (cohort month & period).
+**Facts:** `fact_user_feature` (user & feature grain — adoption, usage, revenue), `fact_user_summary` (user grain — churn, breadth, revenue), `fact_cohort_retention` (cohort month & period).
 
-**Key relationship rule:** all single-direction (dimension → fact); `Fact_UserFeature` and `Fact_UserSummary` are *not* directly related, they are only connected through `Dim_User`.
+**Key relationship rule:** all single-direction (dimension → fact); `fact_user_feature` and `fact_user_summary` are *not* directly related, they are only connected through `dim_user`.
 
 ---
 
@@ -132,7 +132,7 @@ Scripts: `gold folder`
 1. **Breadth matters more than any single feature.** Churn drops sharply between 1 and 2 features used, and revenue per user rises sharply from 2 to 4+ features.
 2. **UPI is a retention hook, not a revenue source** It has highest adoption, near-zero revenue per adopter, solid positive lift. 
 3. **BillPay is an under-monetized retention anchor**, not a loss-leader. It earns real revenue and has the strongest retention lift of all 7 features.
-4. **CreditScore's high adoption doesn't translate into revenue or retention** — zero revenue and a negative lift. It is recommended to test whether it funnels users into Loans before deciding its fate.
+4. **CreditScore's high adoption doesn't translate into revenue or retention** zero revenue and a negative lift. It is recommended to test whether it funnels users into Loans before deciding its fate.
 5. **Loans drives the majority of revenue but shows the worst retention lift.** It should be flagged for further investigation before recommending any product change.
 
 ---
