@@ -1,0 +1,96 @@
+/*
+===============================================================================
+                         Create Silver Layer Tables
+===============================================================================
+This script creates tables in the 'silver' schema, dropping existing tables 
+if they already exist.
+===============================================================================
+*/
+
+IF OBJECT_ID('silver.users', 'U') IS NOT NULL
+    DROP TABLE silver.users;
+GO
+
+CREATE TABLE silver.users (
+    user_id              INT,
+    signup_date          DATE,
+    city_tier            NVARCHAR(50),
+    age_band             NVARCHAR(50),
+    acquisition_channel  NVARCHAR(50)
+);
+GO
+
+IF OBJECT_ID('silver.transactions', 'U') IS NOT NULL
+    DROP TABLE silver.transactions;
+GO
+
+CREATE TABLE silver.transactions (
+    transaction_id       INT,
+    user_id              INT,
+    transaction_date     DATE,
+    feature_name         NVARCHAR(50),
+    amount               DECIMAL(14,2),
+    transaction_type     NVARCHAR(50),
+    is_outlier_amount    BIT
+    
+);
+GO
+
+IF OBJECT_ID('silver.transactions_rejected', 'U') IS NOT NULL
+    DROP TABLE silver.transactions_rejected;
+GO
+
+CREATE TABLE silver.transactions_rejected (
+    transaction_id       INT,
+    user_id              INT,
+    transaction_date     DATE,
+    feature_name         NVARCHAR(50),
+    amount               DECIMAL(14,2),
+    transaction_type     NVARCHAR(50),
+    rejection_reason     NVARCHAR(50)
+    
+);
+GO
+
+IF OBJECT_ID('silver.revenue', 'U') IS NOT NULL
+    DROP TABLE silver.revenue;
+GO
+
+CREATE TABLE silver.revenue (
+    user_id                 INT,
+    year_month              CHAR(7),
+    revenue_source          NVARCHAR(50),
+    revenue_source_repaired BIT,
+    feature_name            NVARCHAR(50),
+    revenue_amount          FLOAT
+);
+GO
+
+IF OBJECT_ID('silver.churn_status', 'U') IS NOT NULL
+    DROP TABLE silver.churn_status;
+GO
+
+CREATE TABLE silver.churn_status (
+    user_id              NVARCHAR(50),
+    last_active          DATE,
+    is_churned           BIT,
+    churn_date           DATE,
+    recency_churn_flag   BIT,
+    churn_flag_mismatch  BIT
+);
+GO
+
+IF OBJECT_ID('silver.feature_usage', 'U') IS NOT NULL
+    DROP TABLE silver.feature_usage;
+GO
+
+CREATE TABLE silver.feature_usage (
+    usage_id           INT,
+    user_id            INT,
+    feature_name       NVARCHAR(50),
+    usage_date         DATE,
+    usage_count        INT
+);
+GO
+
+
