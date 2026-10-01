@@ -1,0 +1,124 @@
+/*==================================================================================
+                                  ADOPTION
+==================================================================================*/
+
+-- 1. Which features have the highest / lowest adoption rate?
+SELECT feature_name, adopters, adoption_rate
+FROM gold.feature_summary
+ORDER BY adoption_rate DESC;
+
+-- 2. Is adoption improving over time, or flat? Adoption rate by signup cohort, per feature.
+SELECT
+    m.cohort_month,
+    uf.feature_name,
+    COUNT(DISTINCT m.user_id) AS cohort_size,
+    COUNT(DISTINCT uf.user_id) AS adopters,
+    CAST(COUNT(DISTINCT uf.user_id) * 1.0 / COUNT(DISTINCT m.user_id) AS DECIMAL(5,4)) AS cohort_adoption_rate
+FROM gold.user_master m
+LEFT JOIN gold.user_feature uf
+ON uf.user_id = m.user_id
+GROUP BY m.cohort_month, uf.feature_name
+ORDER BY m.cohort_month;
+
+-- 3. Does adoption breadth differ by city tier or channel? 
+SELECT city_tier, breadth_bucket, COUNT(*) AS users
+FROM gold.user_master
+GROUP BY city_tier, breadth_bucket
+ORDER BY city_tier, breadth_bucket;
+
+SELECT acquisition_channel, breadth_bucket, COUNT(*) AS users
+FROM gold.user_master
+GROUP BY acquisition_channel, breadth_bucket
+ORDER BY acquisition_channel, breadth_bucket;
+
+/*==================================================================================
+                                  RETENTION
+==================================================================================*/
+
+-- 4. Does more features used = less churn? Churn rate by breadth bucket,
+SELECT
+    breadth_bucket,
+    COUNT(*) AS users,
+    CAST(SUM(CAST(is_churned AS INT)) * 1.0 / COUNT(*) AS DECIMAL(5,4)) AS churn_rate
+FROM gold.user_master
+WHERE retention_eligible = 1 AND survived_day30 = 1
+GROUP BY breadth_bucket
+ORDER BY breadth_bucket;
+
+-- 5. Which single feature shows the strongest link to retention?
+SELECT feature_name, 
+       eligible_adopters, 
+       eligible_non_adopters,
+       churn_rate_adopters, 
+       churn_rate_non_adopters, 
+       retention_lift_pp
+FROM gold.feature_summary
+ORDER BY retention_lift_pp DESC;
+
+-- 6. High-adoption features with weak/no retention benefit
+SELECT feature_name, 
+       adoption_rate, 
+       retention_lift_pp
+FROM gold.feature_summary
+WHERE adoption_rate >= (SELECT AVG(adoption_rate) FROM gold.feature_summary)
+AND retention_lift_pp <= (SELECT AVG(retention_lift_pp) FROM gold.feature_summary)
+ORDER BY retention_lift_pp ASC;
+
+-- 7. Does each feature's retention lift survive within each city tier?
+SELECT feature_name, 
+       segment_value AS city_tier, 
+       eligible_adopters,
+       retention_lift_pp
+FROM gold.feature_by_segment
+WHERE segment_type = 'city_tier'
+ORDER BY feature_name, segment_value;
+
+-- 8. check for acquisition channel
+SELECT feature_name, 
+       segment_value AS channel, 
+       eligible_adopters, 
+       retention_lift_pp
+FROM gold.feature_by_segment
+WHERE segment_type = 'acquisition_channel'
+ORDER BY feature_name, segment_value;
+
+/*==================================================================================
+                                  REVENUE
+==================================================================================*/
+
+-- 9. Which features generate the most total revenue vs. the most revenue per adopter?
+SELECT feature_name, 
+       adopters, 
+       total_revenue, 
+       revenue_per_adopter,
+       RANK() OVER (ORDER BY total_revenue DESC) AS rank_total_revenue,
+       RANK() OVER (ORDER BY revenue_per_adopter DESC) AS rank_revenue_per_adopter
+FROM gold.feature_summary
+ORDER BY total_revenue DESC;
+
+-- 10. Adoption vs. profitability mismatch; is the most-used feature also the most profitable one?
+SELECT feature_name, adoption_rate,
+       RANK() OVER (ORDER BY adoption_rate DESC)       AS rank_adoption,
+       RANK() OVER (ORDER BY revenue_per_adopter DESC) AS rank_revenue_per_adopter
+FROM gold.feature_summary
+ORDER BY rank_adoption;
+
+-- 11. Cross-sell effect; do multi-feature users generate disproportionately more revenue
+SELECT
+    breadth_bucket,
+    COUNT(*) AS users,
+    CAST(AVG(total_revenue) AS DECIMAL(12,2)) AS avg_revenue_per_user,
+    CAST(SUM(total_revenue) AS DECIMAL(14,2)) AS total_revenue_this_bucket,
+    CAST(SUM(total_revenue) * 1.0 / SUM(SUM(total_revenue)) OVER () AS DECIMAL(5,4)) AS pct_of_total_revenue
+FROM gold.user_master
+GROUP BY breadth_bucket
+ORDER BY breadth_bucket;
+
+-- 12. Loss-leader candidates; zero/near-zero revenue but a real retention lift
+SELECT feature_name, 
+       total_revenue, 
+       revenue_per_adopter, 
+       retention_lift_pp
+FROM gold.feature_summary
+WHERE total_revenue < (SELECT AVG(total_revenue) FROM gold.feature_summary)
+ORDER BY total_revenue ASC, retention_lift_pp DESC;
