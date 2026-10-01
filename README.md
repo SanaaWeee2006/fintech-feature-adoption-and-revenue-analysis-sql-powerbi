@@ -129,15 +129,14 @@ Scripts: `gold folder`
 
 ## 9. Key Findings
 
-1. **Breadth matters more than any single feature.** Churn drops sharply between 1 and 2 features used, and revenue per user rises sharply from 2 to 4+ features — a bigger effect than any individual feature's retention lift. Framed as a hypothesis (correlation, not proven causation): onboarding that nudges a second feature within 30 days may be the single highest-leverage lever.
-2. **UPI is a retention hook, not a revenue source** — highest adoption, near-zero revenue per adopter, solid positive lift. By design (regulated, mostly-free payment rail).
-3. **BillPay is an under-monetized retention anchor**, not a loss-leader — it earns real (if modest) revenue and has the strongest retention lift of all 7 features. Flagged as a pricing/upsell test candidate, distinct from true zero-revenue features.
-4. **CreditScore's high adoption doesn't translate into revenue or retention** — zero revenue and a negative lift. Unlike a true loss-leader, it isn't shown to help retention either; recommended to test whether it funnels users into Loans before deciding its fate.
-5. **Loans drives the majority of revenue but shows the worst retention lift.** Flagged explicitly as needing further investigation (product friction vs. adverse selection / pre-existing financial distress) before recommending any product change — correlation alone can't distinguish the two explanations.
-6. **Confounders matter:** Tier1 users over-index on both wealth-feature usage and revenue; several feature-level findings are checked against segment-level views before being stated as feature effects.
+1. **Breadth matters more than any single feature.** Churn drops sharply between 1 and 2 features used, and revenue per user rises sharply from 2 to 4+ features.
+2. **UPI is a retention hook, not a revenue source** It has highest adoption, near-zero revenue per adopter, solid positive lift. 
+3. **BillPay is an under-monetized retention anchor**, not a loss-leader. It earns real revenue and has the strongest retention lift of all 7 features.
+4. **CreditScore's high adoption doesn't translate into revenue or retention** — zero revenue and a negative lift. It is recommended to test whether it funnels users into Loans before deciding its fate.
+5. **Loans drives the majority of revenue but shows the worst retention lift.** It should be flagged for further investigation before recommending any product change.
 
 ---
 
 ## 10. Tools Used
 
-SQL Server (T-SQL), Power BI (Power Query & DAX) for the dashboard and data model.
+SQL Server, Power BI (Power Query & DAX) for the dashboard and data model.
