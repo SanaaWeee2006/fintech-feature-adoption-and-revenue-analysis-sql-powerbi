@@ -75,62 +75,55 @@ Bronze is immutable ambiguous values are **flagged, not silently overwritten**; 
 | `revenue` | Missing `revenue_source` | **Repaired** via deterministic mapping from `feature_name` | Unlike demographics, this value is derivable from a known business rule |
 | `churn_status` | ~5% label disagrees with recency | **Not overwritten.** A second column, `recency_based_churn_flag`, plus `churn_flag_mismatch` sit alongside the original | The recorded flag may reflect real ops (e.g. a frozen account); the mismatch is a finding, not a bug to fix |
 
-Script: `silcer folder`
+Script: `silver folder`
 
 ---
 
 ## 5. Silver to Gold: Analysis-Ready Data Preparation
 
-**Key modeling decisions:**
+   - *Immortal time bias:* users who stay longer mechanically have more time to adopt more features, making breadth look artificially protective.
+   - *Fix:* adoption is measured only in each user's first 30 days (`adopted_in_first_30d`); retention is judged only among users still active at day 30 (`survived_day30`).
+   - 
+   - *Right-censoring:* a user who signed up few days ago can't yet be labeled "retained" or "churned."
+   - *Fix:* retention analysis is restricted to users with ≥90 days of tenure (`retention_eligible`).
+   - 
+   - Budgeting subscription months independent of signup date, producing some revenue rows dated before signup or after the observation window which is impossible in reality.
+   - *Fix:* Built  `gold.valid_revenue` which restricts revenue to each user's valid observation window. 
 
-1. **Adopter definition spans two sources.** A user counts as adopting a feature if they have a usage row *or* revenue from it built as a `FULL OUTER JOIN` of usage and revenue aggregates. This matters because Budgeting subscribers can pay without ever appearing in the usage log; a usage-only definition would silently drop them.
+4. **segment views.** `segment_city_tier`, `segment_channel`, and `vw_feature_by_segment` test whether a feature's retention lift survives once you control for city tier or acquisition channel.
 
-2. **Bias-controlled retention design (the most important fix in the project).** Two problems had to be handled before any retention comparison was trustworthy:
-   - *Immortal time bias:* users who stay longer mechanically have more time to adopt more features, making breadth look artificially protective. **Fix:** adoption is measured only in each user's first 30 days (`adopted_in_first_30d`); retention is judged only among users still active at day 30 (`survived_day30`).
-   - *Right-censoring:* a user who signed up last week can't yet be labeled "retained" or "churned." **Fix:** retention analysis is restricted to users with ≥90 days of tenure (`retention_eligible`).
-
-3. **Revenue-timing bug, found and fixed during gold-layer QA.** The generator assigned Budgeting subscription months independent of signup date, producing some revenue rows dated before signup or after the observation window — impossible in reality. Caught via a validation check, not visible in silver. Fixed with `gold.vw_valid_revenue`, which restricts revenue to each user's valid observation window. The excluded rows remain untouched in silver; an informational query reports how much was excluded.
-
-4. **Confounder-check views.** `vw_segment_city_tier`, `vw_segment_channel`, and `vw_feature_lift_by_segment` test whether a feature's retention lift survives once you control for city tier or acquisition channel — this is what separates a real effect from a segment-mix artifact.
-
-Scripts: `silver_to_gold.sql` (includes an 8-check validation block — every check should read PASS before trusting any downstream chart).
+Scripts: `gold folder` 
 
 ---
 
 ## 6. EDA & Business-Question SQL
 
-`eda_and_business_answers.sql`, organized in 5 sections:
+`eda` & `analysis`:
 
-- **A — EDA:** row counts, signup trend, feature/revenue/churn distributions, raw vs. eligible-only churn rate comparison
-- **B — Adoption:** ranking, cohort-over-time trend, breadth by segment
-- **C — Retention:** breadth vs. churn, per-feature lift ranking, confounder check within segments
-- **D — Revenue:** total vs. per-adopter ranking, adoption/profitability mismatch, cross-sell effect, loss-leader candidates
-- **E — Synthesis:** the final feature-by-feature decision table, weakest-case candidates, and features that look weak overall but are protected within a specific segment
+- **EDA:** row counts, signup trend, feature/revenue/churn distributions, raw vs. eligible-only churn rate comparison
+- **Adoption:** ranking, cohort-over-time trend, breadth by segment
+- **Retention:** breadth vs. churn, per-feature lift ranking, confounder check within segments
+- **Revenue:** total vs. per-adopter ranking, adoption/profitability mismatch, cross-sell effect, loss-leader candidates
 
 ---
 
 ## 7. Power BI: Star Schema
 
-Moved from static, pre-aggregated SQL tables to a dynamic model so **any** dimension can filter **any** metric (e.g. checking if a feature's retention lift holds within Tier1 alone, just by clicking a slicer — no new SQL needed).
+**Dimensions:** `Dim_User` (signup_date, city_tier, age_band, channel, cohort_month), `Dim_Feature` (feature_name, feature_category), `Dim_Date` (calendar table).
 
-**Dimensions:** `Dim_User` (signup_date, city_tier, age_band, channel, cohort_month), `Dim_Feature` (feature_name, feature_category — added in Power Query), `Dim_Date` (calendar table, marked as the model's date table).
+**Facts:** `Fact_UserFeature` (user & feature grain — adoption, usage, revenue), `Fact_UserSummary` (user grain — churn, breadth, revenue), `Fact_CohortRetention` (cohort month & period).
 
-**Facts:** `Fact_UserFeature` (user × feature grain — adoption, usage, revenue), `Fact_UserSummary` (user grain — churn, breadth, revenue), `Fact_CohortRetention` (cohort month × period).
-
-**Key relationship rule:** all single-direction (dimension → fact); `Fact_UserFeature` and `Fact_UserSummary` are *not* directly related — they only connect through `Dim_User`, which is why several DAX measures use `CALCULATETABLE` + `TREATAS` to bridge user sets across the two fact tables explicitly.
-
-DAX measures: `dax_measures.txt`, grouped by page (Core, Adoption, Revenue, Retention Lift, Matrix Quadrant, Breadth/Cross-sell), each validated against the SQL `gold.feature_summary` reference before being trusted.
+**Key relationship rule:** all single-direction (dimension → fact); `Fact_UserFeature` and `Fact_UserSummary` are *not* directly related, they are only connected through `Dim_User`.
 
 ---
 
-## 8. Dashboard Structure (4 pages)
+## 8. Dashboard Structure
 
 | Page | Purpose |
 |---|---|
 | **Overview** | Total users, revenue, overall vs. eligible-only churn rate, signup trend, segment composition |
 | **Adoption** | Adoption ranking, cohort adoption trend over time, breadth by segment |
-| **Retention & Revenue** | The 2×2 adoption-vs-revenue matrix, retention lift ranking with sample sizes, breadth-vs-churn, revenue concentration, cross-sell effect — with city tier / channel slicers for confounder testing |
-| **Recommendation** | One decision table (adoption, revenue, lift, quadrant) plus written findings — no slicers, meant to read as a conclusion |
+| **Retention & Revenue** | Adoption-vs-revenue matrix, retention lift ranking with sample sizes, breadth-vs-churn, revenue concentration, cross-sell effect — with city tier / channel slicers |
 
 ---
 
