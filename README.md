@@ -73,7 +73,7 @@ Bronze is immutable ambiguous values are **flagged, not silently overwritten**; 
 | `transactions` | Orphan `user_id`s | Quarantined to `transactions_rejected` with a reason | Financial rows shouldn't vanish without a trail |
 | `transactions` | Unusual amounts | Flagged (`is_outlier_amount`) | Large amounts can be legitimate |
 | `revenue` | Missing `revenue_source` | **Repaired** via deterministic mapping from `feature_name` | Unlike demographics, this value is derivable from a known business rule |
-| `churn_status` | ~5% label disagrees with recency | **Not overwritten.** A second column, `recency_based_churn_flag`, plus `churn_flag_mismatch` sit alongside the original | The recorded flag may reflect real ops (e.g. a frozen account); the mismatch is a finding, not a bug to fix |
+| `churn_status` | ~5% label disagrees with recency | **Not overwritten.** A second column, `recency_churn_flag`, plus `churn_flag_mismatch` sit alongside the original | The recorded flag may reflect real ops (e.g. a frozen account); the mismatch is a finding, not a bug to fix |
 
 Script: `silver folder`
 
