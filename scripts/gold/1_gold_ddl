@@ -1,0 +1,103 @@
+DROP VIEW IF EXISTS gold.valid_revenue
+GO
+
+CREATE OR ALTER VIEW gold.valid_revenue AS
+SELECT r.*
+FROM silver.revenue r
+JOIN silver.users u ON u.user_id = r.user_id
+WHERE r.year_month >= CONVERT(CHAR(7), u.signup_date, 126)
+  AND r.year_month <= (SELECT CONVERT(CHAR(7), MAX(usage_date), 126) FROM silver.feature_usage);
+GO 
+
+
+IF OBJECT_ID('gold.user_feature', 'U') IS NOT NULL 
+	DROP TABLE gold.user_feature;
+GO
+
+CREATE TABLE gold.user_feature (
+    user_id              INT           NOT NULL,
+    feature_name         NVARCHAR(50)  NOT NULL,
+    first_used_date      DATE          NULL,      -- NULL for rows which are only in revenue
+    last_used_date       DATE          NULL,
+    days_to_adopt        INT           NULL,      -- first_used_date - signup_date
+    adopted_in_first_30d BIT           NOT NULL,
+    total_usage_count    INT           NOT NULL,
+    active_usage_days    INT           NOT NULL,
+    total_revenue        DECIMAL(14,2) NOT NULL,
+    has_usage_record     BIT           NOT NULL,
+    CONSTRAINT PK_gold_user_feature PRIMARY KEY (user_id, feature_name)
+);
+
+IF OBJECT_ID('gold.user_master', 'U') IS NOT NULL 
+    DROP TABLE gold.user_master;
+GO
+
+CREATE TABLE gold.user_master (
+    user_id                   INT PRIMARY KEY,
+    signup_date               DATE,
+    cohort_month              DATE,
+    city_tier                 NVARCHAR(20),
+    age_band                  NVARCHAR(20),
+    acquisition_channel       NVARCHAR(20),
+    tenure_days               INT,
+    features_used_count       INT,
+    breadth_bucket            NVARCHAR(5),
+    first_30d_features_count  INT,
+    used_upi                  BIT,
+    used_billpay              BIT,
+    used_investments          BIT,
+    used_creditscore          BIT,
+    used_loans                BIT,
+    used_cards                BIT,
+    used_budgeting            BIT,  
+    total_usage_count         INT,
+    txn_count                 INT,
+    refund_count              INT,
+    net_txn_amount            DECIMAL(16,2),
+    total_revenue             DECIMAL(14,2),   
+    last_active_date          DATE,
+    is_churned                BIT,
+    recency_based_churn_flag  BIT,
+    churn_flag_mismatch       BIT,
+    retention_eligible        BIT,
+    survived_day30            BIT
+);
+GO
+
+
+IF OBJECT_ID('gold.feature_summary', 'U') IS NOT NULL 
+    DROP TABLE gold.feature_summary;
+GO
+
+CREATE TABLE gold.feature_summary (
+    feature_name             NVARCHAR(50) PRIMARY KEY,
+    adopters                 INT,
+    adoption_rate            DECIMAL(7,4),
+    adopters_first_30d       INT,
+    first_30d_adoption_share DECIMAL(7,4),
+    avg_days_to_adopt        DECIMAL(8,2),
+    total_usage_count        INT,
+    total_revenue            DECIMAL(16,2),
+    revenue_per_adopter      DECIMAL(14,2),
+    eligible_adopters        INT,
+    eligible_non_adopters    INT,
+    churn_rate_adopters      DECIMAL(7,4),
+    churn_rate_non_adopters  DECIMAL(7,4),
+    retention_lift_pp        DECIMAL(7,2),      
+    matrix_quadrant          NVARCHAR(60)
+);
+GO
+
+IF OBJECT_ID('gold.cohort_retention', 'U') IS NOT NULL DROP TABLE gold.cohort_retention;
+GO
+
+CREATE TABLE gold.cohort_retention (
+    cohort_month          DATE,
+    period_number         INT,
+    cohort_users_observed INT,
+    active_users          INT,
+    retention_pct         DECIMAL(7,4),
+    CONSTRAINT PK_gold_cohort_retention PRIMARY KEY (cohort_month, period_number)
+);
+GO
+
