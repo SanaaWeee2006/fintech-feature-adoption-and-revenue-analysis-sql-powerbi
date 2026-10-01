@@ -1,0 +1,96 @@
+PRINT '>>Inspecting bronze.users Table'
+
+-- Check for duplicate user_id
+SELECT user_id, COUNT(*) FROM bronze.users
+GROUP BY user_id 
+HAVING COUNT(*) > 1;
+
+-- Check for signup_date range
+SELECT MIN(signup_date), MAX(signup_date)
+FROM bronze.users;
+
+SELECT * FROM bronze.users
+WHERE signup_date IS NULL;
+
+-- Check for missing entries
+SELECT DISTINCT city_tier FROM bronze.users;
+
+SELECT DISTINCT age_band FROM bronze.users;
+
+SELECT DISTINCT acquisition_channel FROM bronze.users;
+
+PRINT '>>Inspecting bronze.feature_usage Table'
+SELECT 
+  usage_id,
+  user_id,
+  feature_name,
+  usage_date,
+  usage_count
+FROM bronze.feature_usage;
+
+-- Check for inconsistent casing and whitespaces
+SELECT DISTINCT UPPER(TRIM(feature_name)) 
+FROM bronze.feature_usage;
+
+--Check for valid usage_count
+SELECT * FROM bronze.feature_usage
+WHERE usage_count < 0;
+
+-- Check for duplicate usage_id
+SELECT usage_id, COUNT(*) FROM bronze.feature_usage
+GROUP BY usage_id 
+HAVING COUNT(*) > 1;
+
+PRINT '>>Inspecting bronze.transactions Table'
+--check for duplicates
+SELECT transaction_id, COUNT(*)
+FROM bronze.transactions
+GROUP BY transaction_id 
+HAVING COUNT(*) > 1
+
+-- check for negative amount
+SELECT amount
+FROM bronze.transactions
+WHERE amount < 0;
+
+SELECT DISTINCT transaction_type
+FROM bronze.transactions;
+
+SELECT DISTINCT feature_name
+FROM bronze.transactions;
+
+SELECT b.user_id
+FROM bronze.transactions AS b
+LEFT JOIN silver.users AS s
+ON b.user_id = s.user_id
+WHERE s.user_id IS NULL
+
+SELECT amount
+FROM bronze.transactions
+ORDER BY amount DESC;
+
+PRINT '>>Inspecting bronze.revenue Table'
+SELECT * FROM bronze.revenue;
+
+-- missing revenue sources
+SELECT DISTINCT
+revenue_source, feature_name
+FROM bronze.revenue;
+
+--valid revenue amount
+SELECT 
+revenue_amount
+FROM bronze.revenue
+WHERE revenue_amount < 0;
+
+SELECT DISTINCT feature_name
+FROM bronze.revenue;
+
+PRINT '>>Inspecting bronze.churn_status Table'
+SELECT * FROM bronze.churn_status;
+
+SELECT 
+user_id, COUNT(*)
+FROM bronze.churn_status
+GROUP BY user_id
+HAVING COUNT(*) > 2
