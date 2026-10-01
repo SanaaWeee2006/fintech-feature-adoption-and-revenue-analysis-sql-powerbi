@@ -1,0 +1,84 @@
+-- Row counts per table
+SELECT 'users' AS table_name, COUNT(*) AS row_count 
+FROM silver.users
+UNION ALL 
+SELECT 'feature_usage', COUNT(*) 
+FROM silver.feature_usage
+UNION ALL 
+SELECT 'transactions', COUNT(*) 
+FROM silver.transactions
+UNION ALL 
+SELECT 'revenue', COUNT(*) 
+FROM silver.revenue
+UNION ALL 
+SELECT 'churn_status', COUNT(*) 
+FROM silver.churn_status;
+
+-- Signup trend by month 
+SELECT DATEFROMPARTS(YEAR(signup_date), 
+    MONTH(signup_date), 1) AS signup_month,
+    COUNT(*) AS new_users
+FROM silver.users
+GROUP BY DATEFROMPARTS(YEAR(signup_date), MONTH(signup_date), 1)
+ORDER BY signup_month;
+
+-- composition as per city tier, age band, channel
+SELECT city_tier, 
+    COUNT(*) AS user_count, 
+    CAST(COUNT(*) * 1.0 / SUM(COUNT(*)) OVER () AS DECIMAL(5,2)) AS pct
+FROM silver.users GROUP BY city_tier;
+
+SELECT age_band, 
+    COUNT(*) AS user_count,
+    CAST(COUNT(*) * 1.0 / SUM(COUNT(*)) OVER () AS DECIMAL(5,2)) AS pct
+FROM silver.users
+GROUP BY age_band;
+
+SELECT acquisition_channel, COUNT(*) AS user_count
+FROM silver.users GROUP BY acquisition_channel;
+
+
+-- Feature usage distribution 
+SELECT feature_name,
+       COUNT(*) AS usage_events,
+       COUNT(DISTINCT user_id) AS unique_users,
+       CAST(AVG(usage_count) AS DECIMAL(6,2)) AS avg_usage_count,
+       MIN(usage_count) AS min_usage_count,
+       MAX(usage_count) AS max_usage_count
+FROM silver.feature_usage
+GROUP BY feature_name
+ORDER BY usage_events DESC;
+
+-- Transaction amount distribution per feature 
+SELECT feature_name,
+       COUNT(*) AS transaction_count,
+       CAST(AVG(amount) AS DECIMAL(12,2)) AS avg_amount,
+       MIN(amount) AS min_amount,
+       MAX(amount) AS max_amount,
+       SUM(CASE WHEN transaction_type = 'refund' THEN 1 ELSE 0 END) AS refund_count
+FROM silver.transactions
+GROUP BY feature_name
+ORDER BY transaction_count DESC;
+
+-- Revenue distribution per source
+SELECT revenue_source,
+       COUNT(*) AS rows_,
+       CAST(SUM(revenue_amount) AS DECIMAL(14,2)) AS total_revenue,
+       CAST(AVG(revenue_amount) AS DECIMAL(10,2)) AS avg_revenue_per_row
+FROM silver.revenue
+GROUP BY revenue_source
+ORDER BY total_revenue DESC;
+
+-- Overall churn rate, and among the retention-eligible population specifically
+SELECT
+    CAST(SUM(CAST(is_churned AS INT)) * 1.0 / COUNT(*) AS DECIMAL(5,4)) AS raw_churn_rate_all_users,
+    CAST(SUM(CASE WHEN retention_eligible = 1 THEN CAST(is_churned AS INT) ELSE 0 END) * 1.0
+         / NULLIF(SUM(CAST(retention_eligible AS INT)), 0) AS DECIMAL(5,4)) AS churn_rate_eligible_only
+FROM gold.user_master;
+
+-- A8. How many churn labels contradict pure recency? (from the silver flag)
+SELECT
+    COUNT(*) AS total_users,
+    SUM(CAST(churn_flag_mismatch AS INT)) AS mismatched_labels,
+    CAST(SUM(CAST(churn_flag_mismatch AS INT)) * 1.0 / COUNT(*) AS DECIMAL(5,4)) AS mismatch_rate
+FROM silver.churn_status;
