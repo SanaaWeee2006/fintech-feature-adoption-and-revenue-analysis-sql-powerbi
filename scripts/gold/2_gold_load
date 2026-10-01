@@ -1,0 +1,241 @@
+/*
+=============================================================================
+                              Prepare Gold Layer
+=============================================================================
+*/
+
+PRINT '>> Truncating Table: gold.user_feature';
+TRUNCATE TABLE gold.user_feature;
+PRINT '>> Inserting Data Into: gold.user_feature';
+
+WITH usage_details AS (
+SELECT 
+    user_id, 
+    feature_name,
+    MIN(usage_date) AS first_used_date,
+    MAX(usage_date) AS last_used_date,
+    SUM(usage_count) AS total_usage_count,
+    COUNT(DISTINCT usage_date) AS active_usage_days
+FROM silver.feature_usage
+GROUP BY user_id, feature_name
+),
+revenue_details AS (
+SELECT 
+    user_id, 
+    UPPER(feature_name) AS feature_name, 
+    SUM(revenue_amount) AS total_revenue
+FROM gold.valid_revenue
+GROUP BY user_id, feature_name
+)
+
+INSERT INTO gold.user_feature
+
+SELECT
+    COALESCE(ua.user_id, ra.user_id),
+    COALESCE(ua.feature_name, ra.feature_name),
+    ua.first_used_date,
+    ua.last_used_date,
+    DATEDIFF(DAY, u.signup_date, ua.first_used_date),
+    CASE WHEN DATEDIFF(DAY, u.signup_date, ua.first_used_date) BETWEEN 0 AND 30 THEN 1 ELSE 0 END,
+    ISNULL(ua.total_usage_count, 0),
+    ISNULL(ua.active_usage_days, 0),
+    ISNULL(ra.total_revenue, 0),
+    CASE WHEN ua.user_id IS NOT NULL THEN 1 ELSE 0 END
+FROM usage_details ua
+FULL OUTER JOIN revenue_details ra
+    ON ra.user_id = ua.user_id AND ra.feature_name = ua.feature_name
+JOIN silver.users u
+    ON u.user_id = COALESCE(ua.user_id, ra.user_id);
+
+GO
+
+
+PRINT '>> Truncating Table: gold.user_master';
+TRUNCATE TABLE gold.user_master;
+PRINT '>> Inserting Data Into: gold.user_master';
+
+DECLARE @AsOfDate DATE = (SELECT MAX(usage_date) FROM silver.feature_usage);
+
+WITH users_feature_usage AS (
+    SELECT user_id,
+           COUNT(*) AS features_used_count,
+           SUM(CAST(adopted_in_first_30d AS INT)) AS first_30d_features_count,
+           SUM(total_usage_count) AS total_usage_count,
+           SUM(total_revenue) AS total_revenue,
+           MAX(CASE WHEN feature_name = 'UPI' THEN 1 ELSE 0 END) AS used_upi,
+           MAX(CASE WHEN feature_name = 'BILLPAY' THEN 1 ELSE 0 END) AS used_billpay,
+           MAX(CASE WHEN feature_name = 'INVESTMENTS' THEN 1 ELSE 0 END) AS used_investments,
+           MAX(CASE WHEN feature_name = 'CREDITSCORE' THEN 1 ELSE 0 END) AS used_creditscore,
+           MAX(CASE WHEN feature_name = 'LOANS' THEN 1 ELSE 0 END) AS used_loans,
+           MAX(CASE WHEN feature_name = 'CARDS' THEN 1 ELSE 0 END) AS used_cards,
+           MAX(CASE WHEN feature_name = 'BUDGETING' THEN 1 ELSE 0 END) AS used_budgeting
+    FROM gold.user_feature
+    GROUP BY user_id
+),
+users_transactions AS (
+    SELECT user_id,
+           COUNT(*) AS txn_count,
+           SUM(CASE WHEN transaction_type = 'refund' THEN 1 ELSE 0 END) AS refund_count,
+           SUM(amount) AS net_transactionn_amount
+    FROM silver.transactions
+    GROUP BY user_id
+)
+
+INSERT INTO gold.user_master
+
+SELECT
+    u.user_id,
+    u.signup_date,
+    DATEFROMPARTS(YEAR(u.signup_date), MONTH(u.signup_date), 1),
+    u.city_tier,
+    u.age_band,
+    u.acquisition_channel,
+    DATEDIFF(DAY, u.signup_date, @AsOfDate),
+    ISNULL(uf.features_used_count, 0),
+    CASE WHEN ISNULL(uf.features_used_count, 0) >= 4 THEN '4+'
+        ELSE CAST(ISNULL(uf.features_used_count, 0) AS NVARCHAR(5))
+    END,
+    ISNULL(uf.first_30d_features_count, 0),
+    ISNULL(uf.used_upi, 0),
+    ISNULL(uf.used_billpay, 0),
+    ISNULL(uf.used_investments, 0),
+    ISNULL(uf.used_creditscore, 0),
+    ISNULL(uf.used_loans, 0),
+    ISNULL(uf.used_cards, 0),
+    ISNULL(uf.used_budgeting, 0),
+    ISNULL(uf.total_usage_count, 0),
+    ISNULL(t.txn_count, 0),
+    ISNULL(t.refund_count, 0),
+    ISNULL(t.net_transactionn_amount, 0),
+    ISNULL(uf.total_revenue, 0),
+    c.last_active,
+    c.is_churned,
+    c.recency_churn_flag,
+    c.churn_flag_mismatch,
+    CASE WHEN DATEDIFF(DAY, u.signup_date, @AsOfDate) >= 90 THEN 1 ELSE 0 END,
+    CASE WHEN c.last_active >= DATEADD(DAY, 30, u.signup_date) THEN 1 ELSE 0 END
+FROM silver.users u
+LEFT JOIN silver.churn_status c ON c.user_id = u.user_id
+LEFT JOIN users_feature_usage uf ON uf.user_id = u.user_id
+LEFT JOIN users_transactions t ON t.user_id = u.user_id;
+
+GO
+
+
+PRINT '>> Truncating Table: gold.feature_summary';
+TRUNCATE TABLE gold.feature_summary;
+PRINT '>> Inserting Data Into: gold.feature_summary';
+
+DECLARE @TotalUsers INT = (SELECT COUNT(*) FROM gold.user_master);
+
+WITH adoption AS (
+    SELECT feature_name,
+           COUNT(*) AS adopters,
+           SUM(CAST(adopted_in_first_30d AS INT)) AS adopters_first_30d,
+           AVG(CAST(days_to_adopt AS FLOAT)) AS avg_days_to_adopt,
+           SUM(total_usage_count) AS total_usage_count,
+           SUM(total_revenue) AS total_revenue
+    FROM gold.user_feature
+    GROUP BY feature_name
+),
+user_population AS (
+    SELECT user_id, is_churned
+    FROM gold.user_master
+    WHERE retention_eligible = 1 AND survived_day30 = 1
+),
+lift AS (
+    SELECT f.feature_name,
+           SUM(CASE WHEN uf.adopted_in_first_30d = 1 THEN 1 ELSE 0 END) AS elig_adopters,
+           SUM(CASE WHEN uf.adopted_in_first_30d = 1 AND p.is_churned = 1 THEN 1 ELSE 0 END) AS elig_adopters_churned,
+           SUM(CASE WHEN ISNULL(uf.adopted_in_first_30d, 0) = 0 THEN 1 ELSE 0 END) AS elig_non,
+           SUM(CASE WHEN ISNULL(uf.adopted_in_first_30d, 0) = 0 AND p.is_churned = 1 THEN 1 ELSE 0 END) AS elig_non_churned
+    FROM (SELECT DISTINCT feature_name FROM gold.user_feature) f
+    CROSS JOIN user_population p
+    LEFT JOIN gold.user_feature uf
+           ON uf.user_id = p.user_id AND uf.feature_name = f.feature_name
+    GROUP BY f.feature_name
+),
+combined AS (
+    SELECT
+        a.feature_name,
+        a.adopters,
+        CAST(a.adopters * 1.0 / @TotalUsers AS DECIMAL(7,4)) AS adoption_rate,
+        a.adopters_first_30d,
+        CAST(a.adopters_first_30d * 1.0 / NULLIF(a.adopters, 0) AS DECIMAL(7,4)) AS first_30d_adoption_share,
+        CAST(a.avg_days_to_adopt AS DECIMAL(8,2)) AS avg_days_to_adopt,
+        a.total_usage_count,
+        a.total_revenue, 
+        CAST(a.total_revenue / NULLIF(a.adopters, 0) AS DECIMAL(14,2)) AS revenue_per_adopter,
+        l.elig_adopters,
+        l.elig_non,
+        CAST(l.elig_adopters_churned * 1.0 / NULLIF(l.elig_adopters, 0) AS DECIMAL(7,4)) AS churn_rate_adopters,
+        CAST(l.elig_non_churned * 1.0 / NULLIF(l.elig_non, 0) AS DECIMAL(7,4)) AS churn_rate_non_adopters
+    FROM adoption a
+    JOIN lift l ON l.feature_name = a.feature_name
+)
+
+INSERT INTO gold.feature_summary
+SELECT
+    feature_name, 
+    adopters, 
+    adoption_rate, 
+    adopters_first_30d, 
+    first_30d_adoption_share,
+    avg_days_to_adopt, 
+    total_usage_count, 
+    total_revenue, 
+    revenue_per_adopter,
+    elig_adopters, 
+    elig_non, 
+    churn_rate_adopters, 
+    churn_rate_non_adopters,
+    CAST((churn_rate_non_adopters - churn_rate_adopters) * 100 AS DECIMAL(7,2)) AS retention_lift_pp,
+    CASE
+        WHEN adoption_rate >= AVG(adoption_rate) OVER () AND revenue_per_adopter >= AVG(revenue_per_adopter) OVER ()
+            THEN '1 - Invest / Protect'
+        WHEN adoption_rate <  AVG(adoption_rate) OVER () AND revenue_per_adopter >= AVG(revenue_per_adopter) OVER ()
+            THEN '2 - Fix Discovery (high value, low reach)'
+        WHEN adoption_rate >= AVG(adoption_rate) OVER () AND revenue_per_adopter <  AVG(revenue_per_adopter) OVER ()
+            THEN '3 - Retention Hook / Monetize Better'
+        ELSE '4 - Sunset Candidate (check retention lift first)'
+    END
+FROM combined;
+GO
+
+PRINT '>> Truncating Table: gold.cohort_retention';
+TRUNCATE TABLE gold.cohort_retention;
+PRINT '>> Inserting Data Into: gold.cohort_retention';
+
+WITH periods AS (
+    SELECT 0 AS period_number
+    UNION ALL
+    SELECT period_number + 1 FROM periods WHERE period_number < 17
+),
+active_periods AS (
+    SELECT DISTINCT f.user_id,
+    DATEDIFF(DAY, u.signup_date, f.usage_date) / 30 AS period_number
+    FROM silver.feature_usage f
+    JOIN silver.users u 
+    ON u.user_id = f.user_id
+)
+
+INSERT INTO gold.cohort_retention (
+    cohort_month, 
+    period_number, 
+    cohort_users_observed, 
+    active_users, 
+    retention_pct
+)
+SELECT
+    m.cohort_month,
+    p.period_number,
+    COUNT(*) AS cohort_users_observed,
+    SUM(CASE WHEN a.user_id IS NOT NULL THEN 1 ELSE 0 END) AS active_users,
+    CAST(SUM(CASE WHEN a.user_id IS NOT NULL THEN 1 ELSE 0 END) * 1.0 / COUNT(*) AS DECIMAL(7,4)) AS retention_pct
+FROM gold.user_master m
+JOIN periods p
+ON m.tenure_days >= 30 * (p.period_number + 1)
+LEFT JOIN active_periods a
+ON a.user_id = m.user_id AND a.period_number = p.period_number
+GROUP BY m.cohort_month, p.period_number;
+GO
