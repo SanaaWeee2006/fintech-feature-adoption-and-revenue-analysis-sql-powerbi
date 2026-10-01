@@ -1,0 +1,29 @@
+/* 
+============================================================================
+   RECONCILIATION SUMMARY
+============================================================================ 
+*/
+SELECT 'users' AS table_name,
+       (SELECT COUNT(*) FROM bronze.users) AS bronze_rows,
+       (SELECT COUNT(*) FROM silver.users) AS silver_rows,
+       0 AS quarantined_rows
+UNION ALL
+SELECT 'feature_usage',
+       (SELECT COUNT(*) FROM bronze.feature_usage),
+       (SELECT COUNT(*) FROM silver.feature_usage),
+       (SELECT COUNT(*) FROM bronze.feature_usage) - (SELECT COUNT(*) FROM silver.feature_usage)
+UNION ALL
+SELECT 'transactions',
+       (SELECT COUNT(*) FROM bronze.transactions),
+       (SELECT COUNT(*) FROM silver.transactions),
+       (SELECT COUNT(*) FROM silver.transactions_rejected)
+UNION ALL
+SELECT 'revenue',
+       (SELECT COUNT(*) FROM bronze.revenue),
+       (SELECT COUNT(*) FROM silver.revenue),
+       (SELECT COUNT(*) FROM bronze.revenue) - (SELECT COUNT(*) FROM silver.revenue)
+UNION ALL
+SELECT 'churn_status',
+       (SELECT COUNT(*) FROM bronze.churn_status),
+       (SELECT COUNT(*) FROM silver.churn_status),
+       (SELECT COUNT(*) FROM bronze.churn_status) - (SELECT COUNT(*) FROM silver.churn_status);
