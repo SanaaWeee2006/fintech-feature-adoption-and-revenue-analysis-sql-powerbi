@@ -1,8 +1,9 @@
 # Fintech Feature Adoption & Revenue Analysis
 
-A data analytics project that answers a question every product-led fintech faces: **which features actually drive retention and revenue, and what should the product team do about each one; invest, fix discovery, monetize differently, or sunset?**
+The project focuses on answering questions related to a product-led fintech scenario:-
+**which features actually drive retention and revenue, and what should the product team do about each one; invest, fix discovery, monetize differently, or sunset?**
 
-Built end-to-end as a project: synthetic data generation → SQL medallion pipeline (bronze/silver/gold) → EDA and business-question analysis in SQL → a star-schema Power BI dashboard with DAX measures. No ML — the goal was to demonstrate real analyst reasoning (data cleaning judgment, bias-aware retention analysis, confounder checking), not a model.
+Built end-to-end as a project using medallion pipeline (bronze/silver/gold) in SQL, performed data cleaning & EDA to answer business questions. Built a star-schema Power BI dashboard with DAX measures. 
 
 ---
 
@@ -15,31 +16,33 @@ A fintech app has 7 product features. Management doesn't know which ones justify
 - **Retention hook / monetize better** — high adoption, low direct revenue
 - **Sunset candidate** — low adoption, low revenue, no retention benefit
 
-The 7 features analyzed: **UPI, BillPay, Investments, CreditScore, Loans, Cards, Budgeting**.
+The 7 features are: **UPI, BillPay, Investments, CreditScore, Loans, Cards, Budgeting**.
 
 ---
 
 ## 2. Project Architecture
 
 ```
-Synthetic Data Generation (Python)
+   5 CSV datasets
         ↓
-   BRONZE  (raw CSVs, loaded as-is, never modified)
+   BRONZE  (raw CSVs, loaded as it is)
         ↓
-   SILVER  (cleaned, validated, flagged — not silently "fixed")
+   SILVER  (cleaned, validated)
         ↓
-    GOLD   (analysis-ready: user-level, feature-level, cohort-level tables)
+   GOLD   (analysis-ready: user-level, feature-level, segment views)
         ↓
-  EDA + Business-Question SQL  →  Power BI (star schema + DAX)
+   EDA & Business-Question SQL
+        ↓
+   Power BI Dashboard (star schema & DAX measures)
 ```
 
-**Why medallion architecture:** it keeps every transformation auditable. Nothing is overwritten — each layer can be rebuilt from the one before it, and a reconciliation check confirms no row silently disappears without a logged reason.
+**Medallion architecture** keeps every transformation auditable. Each layer can be rebuilt from the one before it, and a reconciliation check confirms no row silently disappears without a logged reason.
 
 ---
 
 ## 3. Dataset
 
-5 source tables, ~3,000 users, ~18 months of activity (Apr 2024–Sep 2025), generated with deliberate personas, noise, contradictions, and confounders so the project reflects real analyst work rather than a clean toy dataset.
+5 source tables, ~3,000 users, ~18 months of activity (Apr 2024–Sep 2025)
 
 | Table | Grain | Purpose |
 |---|---|---|
@@ -49,18 +52,12 @@ Synthetic Data Generation (Python)
 | `revenue` | 1 row per user-month-feature-source | Fees, interest, subscriptions |
 | `churn_status` | 1 row per user | Churn flag snapshot as of the data's end date |
 
-**Deliberately built-in data challenges:**
-- **Confounders:** city tier and acquisition channel influence both feature usage and churn, independent of any feature's real effect. Budgeting subscription revenue is generated independently of usage.
-- **Contradictions:** some "power users" churn early anyway; some 2-feature users never churn; ~5% of churn labels disagree with pure activity recency.
-- **Data quality noise:** missing demographics, inconsistent `feature_name` casing/whitespace, exact-duplicate rows, orphan `user_id`s in transactions, negative (refund) amounts.
-
-Generator script: `generate_fintech_data.py` (fixed random seed for reproducibility).
 
 ---
 
 ## 4. Bronze → Silver: Cleaning Logic
 
-Guiding principles: bronze is immutable; ambiguous values are **flagged, not silently overwritten**; financial records are **quarantined, never deleted**; every row is accounted for in a reconciliation check.
+Bronze is immutable ambiguous values are **flagged, not silently overwritten**; financial records are **quarantined, never deleted**; every row is accounted for in a reconciliation check.
 
 | Table | Issue | Treatment | Why |
 |---|---|---|---|
@@ -145,17 +142,7 @@ DAX measures: `dax_measures.txt`, grouped by page (Core, Adoption, Revenue, Rete
 
 ---
 
-## 10. Known Limitations
-
-- `revenue` has no unique key, so duplicate rows introduced as data noise can't be distinguished from legitimate identical fee rows.
-- Only `transactions` are quarantined on rejection; dropped `feature_usage`/`revenue` rows are counted in reconciliation but not stored separately.
-- The outlier-amount flag (3 standard deviations) is a heuristic, not a statistical test.
-- The hidden `_ground_truth_personas.csv` file exists only to self-check whether segmentation rediscovers the built-in personas — **it is not used in any analysis** and should not be treated as real data.
-- Retention lift findings are correlational; the write-up deliberately avoids claiming causation anywhere a confound is plausible.
-
----
-
-## 11. Files in This Repository
+## 10. Files in This Repository
 
 | File | Purpose |
 |---|---|
@@ -170,4 +157,4 @@ DAX measures: `dax_measures.txt`, grouped by page (Core, Adoption, Revenue, Rete
 
 ## 12. Tools Used
 
-SQL Server (T-SQL), Python (pandas, numpy) for data generation, Power BI (Power Query + DAX) for the dashboard and data model.
+SQL Server (T-SQL), Power BI (Power Query & DAX) for the dashboard and data model.
